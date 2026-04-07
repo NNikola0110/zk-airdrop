@@ -8,14 +8,17 @@ datasource db {
 }
 
 model Campaign {
-  id          Int                  @id @default(autoincrement())
-  name        String
-  repoOwner   String
-  repoName    String
-  isActive    Boolean              @default(false)
-  createdAt   DateTime             @default(now())
-  eligibilities Eligibility[]
-  commitments IdentityCommitment[]
+  id              Int                  @id @default(autoincrement())
+  name            String
+  repoOwner       String
+  repoName        String
+  totalAmount     Float                @default(0)
+  sponsorAddress  String               @default("")
+  isActive        Boolean              @default(false)
+  createdAt       DateTime             @default(now())
+  eligibilities   Eligibility[]
+  commitments     IdentityCommitment[]
+  rounds          Round[]
 }
 
 model Eligibility {
@@ -42,4 +45,47 @@ model IdentityCommitment {
 
   @@index([githubLogin])
   @@index([campaignId])
+}
+
+model Round {
+  id              Int      @id @default(autoincrement())
+  name            String
+  isActive        Boolean  @default(false)
+  amountPerClaim  Float
+  startDate       DateTime
+  endDate         DateTime
+  createdAt       DateTime @default(now())
+
+  campaignId      Int
+  campaign        Campaign @relation(fields: [campaignId], references: [id])
+
+  nullifiers      Nullifier[]
+  distributions   Distribution[]
+
+  @@index([campaignId])
+}
+
+model Nullifier {
+  id             Int      @id @default(autoincrement())
+  nullifierHash  String   @unique
+  createdAt      DateTime @default(now())
+
+  roundId        Int
+  round          Round    @relation(fields: [roundId], references: [id])
+
+  @@index([roundId])
+}
+
+model Distribution {
+  id             Int      @id @default(autoincrement())
+  walletAddress  String
+  amount         Float
+  nullifierHash  String
+  createdAt      DateTime @default(now())
+
+  roundId        Int
+  round          Round    @relation(fields: [roundId], references: [id])
+
+  @@index([roundId])
+  @@index([walletAddress])
 }

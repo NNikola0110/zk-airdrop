@@ -9,7 +9,10 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@semaphore-protocol/core": "^4.14.2",
+    "@semaphore-protocol/group": "^4.14.2",
     "@semaphore-protocol/identity": "^4.14.2",
+    "@semaphore-protocol/proof": "^4.14.2",
     "next": "16.2.2",
     "react": "19.2.4",
     "react-dom": "19.2.4"

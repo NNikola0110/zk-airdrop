@@ -20,6 +20,12 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [commitmentStatus, setCommitmentStatus] = useState("");
+  const [identitySaved, setIdentitySaved] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("semaphoreIdentityTrapdoor");
+    if (saved) setIdentitySaved(true);
+  }, []);
 
   useEffect(() => {
     const fetchEligibility = async () => {
@@ -78,6 +84,10 @@ export default function DashboardPage() {
         throw new Error(json.error || "Failed to save commitment");
       }
 
+      // Save campaignId for claim page
+      localStorage.setItem("campaignId", String(data.campaignId));
+
+      setIdentitySaved(true);
       setCommitmentStatus("Semaphore identity generated and commitment saved.");
     } catch (err) {
       setCommitmentStatus(
@@ -197,6 +207,34 @@ export default function DashboardPage() {
             {commitmentStatus && (
               <div className="mt-6 rounded-2xl border border-blue-400/20 bg-blue-400/10 p-4 text-sm text-blue-200 break-words">
                 {commitmentStatus}
+              </div>
+            )}
+
+            {identitySaved && (
+              <div className="mt-6 space-y-3">
+                <button
+                  onClick={() => {
+                    const saved = localStorage.getItem("semaphoreIdentityTrapdoor");
+                    if (!saved) return;
+                    const blob = new Blob([saved], { type: "application/json" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "semaphore-identity.json";
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-5 py-3 text-sm font-semibold text-zinc-300 hover:bg-white/10 transition"
+                >
+                  Download Identity Backup
+                </button>
+
+                <a
+                  href="/claim"
+                  className="block w-full rounded-2xl bg-emerald-500 text-white text-center px-5 py-3 font-semibold hover:bg-emerald-400 transition"
+                >
+                  Go to Claim Airdrop
+                </a>
               </div>
             )}
           </div>

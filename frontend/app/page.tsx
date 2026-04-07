@@ -48,12 +48,28 @@ export default function HomePage() {
             </div>
           </div>
 
-          <button
-            onClick={handleLogin}
-            className="w-full md:w-auto rounded-2xl bg-white text-black px-6 py-3 font-semibold hover:bg-zinc-200 transition"
-          >
-            Continue with GitHub
-          </button>
+          <div className="flex flex-wrap gap-4">
+            <button
+              onClick={handleLogin}
+              className="rounded-2xl bg-white text-black px-6 py-3 font-semibold hover:bg-zinc-200 transition"
+            >
+              Continue with GitHub
+            </button>
+
+            <a
+              href="/sponsor"
+              className="rounded-2xl bg-purple-500 text-white px-6 py-3 font-semibold hover:bg-purple-400 transition"
+            >
+              Sponsor a Repo
+            </a>
+
+            <a
+              href="/distributions"
+              className="rounded-2xl border border-white/10 bg-white/5 px-6 py-3 font-semibold text-zinc-300 hover:bg-white/10 transition"
+            >
+              View Distributions
+            </a>
+          </div>
         </div>
       </div>
     </main>
