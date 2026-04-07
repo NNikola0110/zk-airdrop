@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import { prisma } from "./lib/prisma";
 
 dotenv.config();
 
@@ -57,10 +58,10 @@ app.get("/auth/github/callback", async (req, res) => {
       }),
     });
 
-   const tokenData = (await tokenResponse.json()) as {
-  access_token?: string;
-  [key: string]: unknown;
-};
+    const tokenData = (await tokenResponse.json()) as {
+      access_token?: string;
+      [key: string]: unknown;
+    };
 
     if (!tokenData.access_token) {
       return res.status(400).json({
@@ -80,9 +81,9 @@ app.get("/auth/github/callback", async (req, res) => {
     });
 
     const userData = (await userResponse.json()) as {
-  login?: string;
-  [key: string]: unknown;
-};
+      login?: string;
+      [key: string]: unknown;
+    };
 
     const githubLogin = userData.login;
 
@@ -102,14 +103,71 @@ app.get("/auth/github/callback", async (req, res) => {
   }
 });
 
-app.get("/eligibility/me", (req, res) => {
+async function getActiveCampaign() {
+  return prisma.campaign.findFirst({
+    where: { isActive: true },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+async function checkIfUserIsContributor(
+  githubLogin: string,
+  repoOwner: string,
+  repoName: string
+): Promise<boolean> {
+  const url = `https://api.github.com/repos/${repoOwner}/${repoName}/contributors`;
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "zk-airdrop-local",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub contributors request failed with status ${response.status}`);
+  }
+
+  const contributors = (await response.json()) as Array<{
+    login?: string;
+    [key: string]: unknown;
+  }>;
+
+  return contributors.some(
+    (contributor) => contributor.login?.toLowerCase() === githubLogin.toLowerCase()
+  );
+}
+
+app.get("/eligibility/me", async (req, res) => {
   const githubLogin = req.query.githubLogin as string | undefined;
 
-  res.json({
-    githubLogin: githubLogin || "unknown_user",
-    repo: "owner/repo",
-    isContributor: true,
-  });
+  if (!githubLogin) {
+    return res.status(400).json({ error: "Missing githubLogin" });
+  }
+
+  try {
+    const campaign = await getActiveCampaign();
+
+    if (!campaign) {
+      return res.status(404).json({ error: "No active campaign found" });
+    }
+
+    const isContributor = await checkIfUserIsContributor(
+      githubLogin,
+      campaign.repoOwner,
+      campaign.repoName
+    );
+
+    return res.json({
+      githubLogin,
+      repo: `${campaign.repoOwner}/${campaign.repoName}`,
+      campaignName: campaign.name,
+      isContributor,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Failed to check contributor status" });
+  }
 });
 
 app.listen(PORT, () => {

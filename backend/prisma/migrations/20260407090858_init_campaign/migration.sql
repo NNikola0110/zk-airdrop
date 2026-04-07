@@ -1,0 +1,9 @@
+-- CreateTable
+CREATE TABLE "Campaign" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "name" TEXT NOT NULL,
+    "repoOwner" TEXT NOT NULL,
+    "repoName" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
