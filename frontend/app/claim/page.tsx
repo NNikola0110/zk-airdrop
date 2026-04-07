@@ -7,93 +7,116 @@ import { generateProof } from "@semaphore-protocol/proof";
 
 const API_URL = "http://localhost:3001";
 
-type RoundData = {
+type CampaignWithRound = {
   id: number;
   name: string;
-  amountPerClaim: number;
-  campaignId: number;
-  startDate: string;
-  endDate: string;
+  repoOwner: string;
+  repoName: string;
+  totalAmount: number;
+  rounds: {
+    id: number;
+    name: string;
+    amountPerClaim: number;
+    endDate: string;
+  }[];
+  _count: { commitments: number };
 };
 
 export default function ClaimPage() {
   const [walletAddress, setWalletAddress] = useState("");
-  const [status, setStatus] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [round, setRound] = useState<RoundData | null>(null);
+  const [campaigns, setCampaigns] = useState<CampaignWithRound[]>([]);
+  const [loading, setLoading] = useState(true);
   const [hasIdentity, setHasIdentity] = useState(false);
-  const [claimed, setClaimed] = useState(false);
+  const [claimingId, setClaimingId] = useState<number | null>(null);
+  const [claimedIds, setClaimedIds] = useState<Set<number>>(new Set());
+  const [statuses, setStatuses] = useState<Record<number, string>>({});
+  const [errors, setErrors] = useState<Record<number, string>>({});
 
   useEffect(() => {
-    // Check if user has a saved identity
     const saved = localStorage.getItem("semaphoreIdentityTrapdoor");
     setHasIdentity(!!saved);
 
-    // Check campaignId from localStorage or default
-    const campaignId = localStorage.getItem("campaignId") || "1";
-    fetchActiveRound(Number(campaignId));
+    fetchCampaigns();
   }, []);
 
-  const fetchActiveRound = async (campaignId: number) => {
+  const fetchCampaigns = async () => {
     try {
-      const res = await fetch(`${API_URL}/rounds/active/${campaignId}`);
+      const res = await fetch(`${API_URL}/campaigns`);
       if (res.ok) {
         const data = await res.json();
-        setRound(data);
+        setCampaigns(data);
       }
     } catch {
-      // No active round
+      // Failed to fetch
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleClaim = async () => {
-    setError("");
-    setStatus("");
+  const handleClaim = async (campaign: CampaignWithRound) => {
+    const round = campaign.rounds[0];
+    if (!round) return;
 
-    // Validate wallet
+    setErrors((prev) => ({ ...prev, [campaign.id]: "" }));
+    setStatuses((prev) => ({ ...prev, [campaign.id]: "" }));
+
     if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
-      setError("Invalid Ethereum wallet address");
+      setErrors((prev) => ({
+        ...prev,
+        [campaign.id]: "Invalid Ethereum wallet address",
+      }));
       return;
     }
 
-    // Load identity from localStorage
     const savedIdentity = localStorage.getItem("semaphoreIdentityTrapdoor");
     if (!savedIdentity) {
-      setError("No Semaphore identity found. Go to Dashboard first to generate one.");
+      setErrors((prev) => ({
+        ...prev,
+        [campaign.id]: "No Semaphore identity found. Go to Dashboard first.",
+      }));
       return;
     }
 
-    if (!round) {
-      setError("No active round available for claiming.");
-      return;
-    }
-
-    setLoading(true);
+    setClaimingId(campaign.id);
 
     try {
-      // 1. Restore identity
-      setStatus("Restoring your anonymous identity...");
+      setStatuses((prev) => ({
+        ...prev,
+        [campaign.id]: "Restoring your anonymous identity...",
+      }));
       const identity = Identity.import(savedIdentity);
 
-      // 2. Fetch group members from backend
-      setStatus("Fetching group members...");
-      const membersRes = await fetch(`${API_URL}/commitments/${round.campaignId}`);
+      setStatuses((prev) => ({
+        ...prev,
+        [campaign.id]: "Fetching group members...",
+      }));
+      const membersRes = await fetch(`${API_URL}/commitments/${campaign.id}`);
       const membersData = await membersRes.json();
 
-      // 3. Rebuild Semaphore group locally
-      setStatus("Building Semaphore group...");
+      setStatuses((prev) => ({
+        ...prev,
+        [campaign.id]: "Building Semaphore group...",
+      }));
       const group = new Group();
       for (const member of membersData.members) {
         group.addMember(BigInt(member));
       }
 
-      // 4. Generate ZK proof with wallet address as signal, roundId as scope
-      setStatus("Generating zero-knowledge proof...");
-      const proof = await generateProof(identity, group, walletAddress, round.id);
+      setStatuses((prev) => ({
+        ...prev,
+        [campaign.id]: "Generating zero-knowledge proof...",
+      }));
+      const proof = await generateProof(
+        identity,
+        group,
+        walletAddress,
+        round.id
+      );
 
-      // 5. Send proof to backend for verification
-      setStatus("Submitting claim...");
+      setStatuses((prev) => ({
+        ...prev,
+        [campaign.id]: "Submitting claim...",
+      }));
       const claimRes = await fetch(`${API_URL}/claim`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -110,117 +133,167 @@ export default function ClaimPage() {
         throw new Error(claimData.error || "Claim failed");
       }
 
-      setStatus(`Airdrop claimed! ${claimData.amount} tokens will be sent to ${walletAddress}`);
-      setClaimed(true);
+      setStatuses((prev) => ({
+        ...prev,
+        [campaign.id]: `Claimed! ${claimData.amount} tokens will be sent to ${walletAddress}`,
+      }));
+      setClaimedIds((prev) => new Set(prev).add(campaign.id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to claim airdrop");
+      setErrors((prev) => ({
+        ...prev,
+        [campaign.id]:
+          err instanceof Error ? err.message : "Failed to claim airdrop",
+      }));
     } finally {
-      setLoading(false);
+      setClaimingId(null);
     }
   };
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-black text-white px-6 py-12">
-      <div className="mx-auto max-w-2xl">
+      <div className="mx-auto max-w-3xl">
         <div className="mb-8">
           <a
-            href="/dashboard"
+            href="/"
             className="text-sm text-zinc-400 hover:text-white transition"
           >
             &larr; Back to Dashboard
           </a>
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl p-8 shadow-2xl">
-          <h1 className="text-3xl font-bold tracking-tight mb-2">
-            Claim Airdrop
-          </h1>
-          <p className="text-zinc-400 text-sm mb-8">
-            Submit a zero-knowledge proof to claim your airdrop anonymously.
-            No one will know which GitHub account you are.
-          </p>
+        <h1 className="text-3xl font-bold tracking-tight mb-2">
+          Claim Airdrop
+        </h1>
+        <p className="text-zinc-400 text-sm mb-8">
+          Submit a zero-knowledge proof to claim your airdrop anonymously. No
+          one will know which GitHub account you are.
+        </p>
 
-          {/* Round info */}
-          {round ? (
-            <div className="rounded-2xl bg-black/20 border border-white/10 p-4 mb-6">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-zinc-400">Active Round</p>
-                <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold border border-emerald-400/20 bg-emerald-400/10 text-emerald-300">
-                  ACTIVE
-                </span>
-              </div>
-              <p className="font-semibold text-lg">{round.name}</p>
-              <p className="text-sm text-zinc-400 mt-1">
-                {round.amountPerClaim} tokens per claim
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-2xl bg-black/20 border border-red-400/20 p-4 mb-6">
-              <p className="text-sm text-red-300">
-                No active round found. Claiming is not available.
-              </p>
-            </div>
-          )}
-
-          {/* Identity status */}
-          {!hasIdentity && (
-            <div className="rounded-2xl bg-black/20 border border-yellow-400/20 p-4 mb-6">
-              <p className="text-sm text-yellow-300">
-                No Semaphore identity found. Go to{" "}
-                <a href="/dashboard" className="underline">
-                  Dashboard
-                </a>{" "}
-                to generate one first.
-              </p>
-            </div>
-          )}
-
-          {/* Wallet input */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Ethereum Wallet Address
-            </label>
-            <input
-              type="text"
-              value={walletAddress}
-              onChange={(e) => setWalletAddress(e.target.value)}
-              placeholder="0x..."
-              className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-400/50 transition"
-              disabled={loading || claimed}
-            />
+        {/* Identity warning */}
+        {!hasIdentity && (
+          <div className="rounded-2xl bg-black/20 border border-yellow-400/20 p-4 mb-6">
+            <p className="text-sm text-yellow-300">
+              No Semaphore identity found. Go to{" "}
+              <a href="/dashboard" className="underline">
+                Dashboard
+              </a>{" "}
+              to generate one first.
+            </p>
           </div>
+        )}
 
-          {/* Claim button */}
-          <button
-            onClick={handleClaim}
-            disabled={loading || !hasIdentity || !round || claimed}
-            className="w-full rounded-2xl bg-emerald-500 text-white px-5 py-3 font-semibold hover:bg-emerald-400 transition disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {loading
-              ? "Processing..."
-              : claimed
-              ? "Claimed"
-              : "Claim Airdrop Anonymously"}
-          </button>
+        {/* Wallet input */}
+        <div className="mb-8">
+          <label className="block text-sm font-medium text-zinc-300 mb-2">
+            Ethereum Wallet Address
+          </label>
+          <input
+            type="text"
+            value={walletAddress}
+            onChange={(e) => setWalletAddress(e.target.value)}
+            placeholder="0x..."
+            className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-400/50 transition"
+          />
+        </div>
 
-          {/* Status messages */}
-          {status && (
-            <div
-              className={`mt-6 rounded-2xl border p-4 text-sm break-words ${
-                claimed
-                  ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
-                  : "border-blue-400/20 bg-blue-400/10 text-blue-200"
-              }`}
-            >
-              {status}
-            </div>
-          )}
+        {/* Loading */}
+        {loading && (
+          <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl px-8 py-6 text-zinc-300">
+            Loading campaigns...
+          </div>
+        )}
 
-          {error && (
-            <div className="mt-6 rounded-2xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">
-              {error}
-            </div>
-          )}
+        {/* Campaign list */}
+        {!loading && campaigns.length === 0 && (
+          <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl p-8 text-center text-zinc-400">
+            No active campaigns found.
+          </div>
+        )}
+
+        <div className="space-y-4">
+          {campaigns.map((campaign) => {
+            const round = campaign.rounds[0];
+            const isClaimed = claimedIds.has(campaign.id);
+            const isClaiming = claimingId === campaign.id;
+
+            return (
+              <div
+                key={campaign.id}
+                className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl p-6 shadow-2xl"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <p className="font-semibold text-lg">{campaign.name}</p>
+                    <p className="text-sm text-zinc-400">
+                      {campaign.repoOwner}/{campaign.repoName}
+                    </p>
+                  </div>
+                  {isClaimed && (
+                    <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold border border-emerald-400/20 bg-emerald-400/10 text-emerald-300">
+                      CLAIMED
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3 text-sm mb-4">
+                  <div className="rounded-2xl bg-black/20 border border-white/10 p-3">
+                    <p className="text-zinc-400 mb-1">Total Pool</p>
+                    <p className="font-medium">{campaign.totalAmount} tokens</p>
+                  </div>
+                  {round && (
+                    <>
+                      <div className="rounded-2xl bg-black/20 border border-white/10 p-3">
+                        <p className="text-zinc-400 mb-1">Per Claim</p>
+                        <p className="font-medium">
+                          {round.amountPerClaim} tokens
+                        </p>
+                      </div>
+                      <div className="rounded-2xl bg-black/20 border border-white/10 p-3">
+                        <p className="text-zinc-400 mb-1">Ends</p>
+                        <p className="font-medium">
+                          {new Date(round.endDate).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {round && !isClaimed && (
+                  <button
+                    onClick={() => handleClaim(campaign)}
+                    disabled={isClaiming || !hasIdentity || claimingId !== null}
+                    className="w-full rounded-2xl bg-emerald-500 text-white px-5 py-3 font-semibold hover:bg-emerald-400 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {isClaiming ? "Processing..." : "Claim Anonymously"}
+                  </button>
+                )}
+
+                {!round && (
+                  <div className="rounded-2xl bg-black/20 border border-red-400/20 p-3 text-sm text-red-300">
+                    No active round for this campaign.
+                  </div>
+                )}
+
+                {statuses[campaign.id] && (
+                  <div
+                    className={`mt-3 rounded-2xl border p-4 text-sm break-words ${
+                      isClaimed
+                        ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
+                        : "border-blue-400/20 bg-blue-400/10 text-blue-200"
+                    }`}
+                  >
+                    {statuses[campaign.id]}
+                  </div>
+                )}
+
+                {errors[campaign.id] && (
+                  <div className="mt-3 rounded-2xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">
+                    {errors[campaign.id]}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </main>

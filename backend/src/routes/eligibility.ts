@@ -4,6 +4,7 @@ import { checkIfUserIsContributor } from "../lib/github";
 
 const router = Router();
 
+// Check eligibility across ALL active campaigns
 router.get("/me", async (req, res) => {
   const githubLogin = req.query.githubLogin as string | undefined;
 
@@ -12,35 +13,45 @@ router.get("/me", async (req, res) => {
   }
 
   try {
-    const campaign = await prisma.campaign.findFirst({
+    const campaigns = await prisma.campaign.findMany({
       where: { isActive: true },
-      orderBy: { createdAt: "desc" },
+      include: { rounds: { where: { isActive: true } } },
     });
 
-    if (!campaign) {
-      return res.status(404).json({ error: "No active campaign found" });
+    if (campaigns.length === 0) {
+      return res.status(404).json({ error: "No active campaigns found" });
     }
 
-    const isContributor = await checkIfUserIsContributor(
-      githubLogin,
-      campaign.repoOwner,
-      campaign.repoName
-    );
+    const results = [];
 
-    await prisma.eligibility.create({
-      data: {
+    for (const campaign of campaigns) {
+      const isContributor = await checkIfUserIsContributor(
         githubLogin,
-        isEligible: isContributor,
+        campaign.repoOwner,
+        campaign.repoName
+      );
+
+      await prisma.eligibility.create({
+        data: {
+          githubLogin,
+          isEligible: isContributor,
+          campaignId: campaign.id,
+        },
+      });
+
+      results.push({
         campaignId: campaign.id,
-      },
-    });
+        campaignName: campaign.name,
+        repo: `${campaign.repoOwner}/${campaign.repoName}`,
+        totalAmount: campaign.totalAmount,
+        isContributor,
+        activeRound: campaign.rounds[0] || null,
+      });
+    }
 
     return res.json({
       githubLogin,
-      repo: `${campaign.repoOwner}/${campaign.repoName}`,
-      campaignId: campaign.id,
-      campaignName: campaign.name,
-      isContributor,
+      campaigns: results,
     });
   } catch (error) {
     console.error(error);
