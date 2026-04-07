@@ -2,7 +2,7 @@
 
 export default function HomePage() {
   const handleLogin = () => {
-    window.location.href = "http://localhost:3000/auth/github";
+    window.location.href = "http://localhost:3001/auth/github";
   };
 
   return (
@@ -10,7 +10,7 @@ export default function HomePage() {
       <div className="max-w-md w-full rounded-2xl shadow-md border p-8">
         <h1 className="text-2xl font-bold mb-4">zk-airdrop</h1>
         <p className="text-sm text-gray-600 mb-6">
-          Login with GitHub to check whether you are a contributor.
+          Login with GitHub to start the contributor check flow.
         </p>
 
         <button
