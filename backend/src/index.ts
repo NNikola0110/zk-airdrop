@@ -158,15 +158,83 @@ app.get("/eligibility/me", async (req, res) => {
       campaign.repoName
     );
 
+    await prisma.eligibility.create({
+      data: {
+        githubLogin,
+        isEligible: isContributor,
+        campaignId: campaign.id,
+      },
+    });
+
     return res.json({
       githubLogin,
       repo: `${campaign.repoOwner}/${campaign.repoName}`,
+      campaignId: campaign.id,
       campaignName: campaign.name,
       isContributor,
     });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: "Failed to check contributor status" });
+  }
+});
+
+app.post("/commitments", async (req, res) => {
+  const { githubLogin, campaignId, commitment } = req.body as {
+    githubLogin?: string;
+    campaignId?: number;
+    commitment?: string;
+  };
+
+  if (!githubLogin || !campaignId || !commitment) {
+    return res.status(400).json({
+      error: "Missing githubLogin, campaignId, or commitment",
+    });
+  }
+
+  try {
+    const latestEligibility = await prisma.eligibility.findFirst({
+      where: {
+        githubLogin,
+        campaignId,
+      },
+      orderBy: {
+        checkedAt: "desc",
+      },
+    });
+
+    if (!latestEligibility || !latestEligibility.isEligible) {
+      return res.status(403).json({
+        error: "User is not eligible for this campaign",
+      });
+    }
+
+    const existingCommitment = await prisma.identityCommitment.findUnique({
+      where: { commitment },
+    });
+
+    if (existingCommitment) {
+      return res.status(409).json({
+        error: "Commitment already exists",
+      });
+    }
+
+    const savedCommitment = await prisma.identityCommitment.create({
+      data: {
+        githubLogin,
+        campaignId,
+        commitment,
+      },
+    });
+
+    return res.json({
+      success: true,
+      commitmentId: savedCommitment.id,
+      commitment: savedCommitment.commitment,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Failed to save commitment" });
   }
 });
 

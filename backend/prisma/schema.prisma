@@ -8,10 +8,38 @@ datasource db {
 }
 
 model Campaign {
-  id        Int      @id @default(autoincrement())
-  name      String
-  repoOwner String
-  repoName  String
-  isActive  Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id          Int                  @id @default(autoincrement())
+  name        String
+  repoOwner   String
+  repoName    String
+  isActive    Boolean              @default(false)
+  createdAt   DateTime             @default(now())
+  eligibilities Eligibility[]
+  commitments IdentityCommitment[]
+}
+
+model Eligibility {
+  id          Int      @id @default(autoincrement())
+  githubLogin String
+  isEligible  Boolean
+  checkedAt   DateTime @default(now())
+
+  campaignId  Int
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+
+  @@index([githubLogin])
+  @@index([campaignId])
+}
+
+model IdentityCommitment {
+  id          Int      @id @default(autoincrement())
+  githubLogin String
+  commitment  String   @unique
+  createdAt   DateTime @default(now())
+
+  campaignId  Int
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+
+  @@index([githubLogin])
+  @@index([campaignId])
 }
